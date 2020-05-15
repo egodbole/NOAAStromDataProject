@@ -1,0 +1,200 @@
+---
+title: "Most Destructive Weather Events in the United States 2006 Onwards"
+author: "E.Go"
+date: "15/05/2020"
+output: html_document
+---
+
+## Synopsis
+The data was read from the given .bz2 file and subset to get the data for the years 2006 onwards. The event type variable was cleaned as per the documentation to 48 event types. The effect on population health was gauged by the injuries and fatalities. The effect on economy, the crop and property damage were examined. In conclusion, tornadoes, excessive heat and thunderstorm wind were most harmful to population health, while flood, tornado and hail had the greatest economic consequences.
+
+### Loading Relevant Libraries
+```{r libraries}
+library(lubridate)
+library(dplyr)
+```
+
+## Data Processing
+### Reading Data
+The data, along with its documentation, was downloaded from the provided URL and saved appropriately. The time of access is also recorded.
+
+```{r reading, cache=TRUE}
+if(!file.exists("stormData.csv.bz2")) {
+        url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+        download.file(url, "stormData.csv.bz2")
+}
+
+stormData <- read.csv("stormData.csv.bz2")
+stormData <- as_tibble(stormData)
+
+if(!file.exists("stormDataDocumentation.pdf")) {
+        url2 <- "https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf"
+        download.file(url2, "stormDataDocumentation.pdf")
+}
+
+date.accessed <- Sys.time()
+print(date.accessed)
+```
+
+### Subsetting the Data
+The data is very large and untidy. For convenience, for this project, a subset of the data has been considered. The data from 2006 onwards have been considered for further analysis.
+
+The lubridate package was used to work with the dates. The variable names were also converted to the lowercase.
+
+```{r subsetting}
+names(stormData) <- tolower(names(stormData))
+
+# subsetting data 2006 onwards
+isSelected <- year(mdy_hms(stormData$bgn_date)) > 2005
+
+data <- stormData[isSelected, ]
+```
+
+### Cleaning the Data
+#### Fixing event types
+The data initially had `r length(unique(as.character(data$evtype)))` unique entries. This wsa brought down to the 48 event types mentioned in the documentation. The strategy is to find a matching string in the evtype elements, and to rename that element properly.
+
+```{r cleaning}
+evtype <- tolower(as.character(data$evtype))
+
+# COASTAL FLOOD
+isCoast <- grepl("^c", evtype)
+isFlood <- grepl("flood", evtype)
+evtype[isCoast & isFlood] <-  "coastal flood"
+# JUST FLOOD
+isLake <- grepl("lake", evtype)
+isFlash <- grepl("flash", evtype)
+evtype[isFlood & !(isCoast | isFlash | isLake)] <- "flood"
+
+
+# COLD/WIND CHILL
+isCold <- grepl("cold", evtype)
+isExtreme <- grepl("extreme", evtype)
+evtype[isCold & !isExtreme] <- "cold/wind chill"
+# EXTREME COLD/WIND CHILL
+evtype[isCold & isExtreme] <- "extreme cold/wind chill"
+
+# DROUGHT
+isDrought <- grepl("drought", evtype)
+evtype[isDrought] <- "drought"
+
+# DUST DEVIL
+isDust <- grepl("dust", evtype)
+isStorm <- grepl("storm", evtype)
+evtype[isDust & !isStorm] <- "dust devil"
+
+# FREEZING FOG
+isFreeze <- grepl("freez", evtype)
+isFog <- grepl("fog", evtype)
+evtype[isFreeze & isFog] <- "freezing fog"
+# DENSE FOG
+evtype[isFog & !isFreeze] <- "dense fog"
+
+# FROST/FREEZE
+isFrost <- grepl("frost", evtype)
+evtype[(isFreeze & !isFog) | isFrost] <- "frost/freeze"
+
+# FUNNEL CLOUD
+isFunnel <- grepl("funnel", evtype)
+evtype[isFunnel] <- "funnel cloud"
+
+# HAIL
+isMarine <- grepl("marine", evtype)
+isHail <- grepl("hail", evtype)
+evtype[isHail & !isMarine] <- "hail"
+
+# HEAT
+isExcessive <- grepl("excess", evtype)
+isHeat <- grepl("heat", evtype)
+evtype[isHeat & !isExcessive] <-"heat"
+
+# HIGH SURF
+isSurf <- grepl("surf", evtype)
+evtype[isSurf] <- "high surf"
+
+# TSTM --> THUNDERSTORM
+evtype <- sub("tstm", "thunderstorm", evtype)
+
+# STORM TIDE
+isTide <- grepl("tide|surge", evtype)
+evtype[isStorm & isTide] <- "storm tide"
+
+# WINTER WEATHER
+isWeather <- grepl("weath", evtype)
+evtype[isWeather] <- "winter weather"
+
+# VOLCANIC ASH
+isVolcano <- grepl("volc", evtype)
+evtype[isVolcano] <- "volcanic ash"
+
+# reassigning fixed evtype
+data$evtype <- as.factor(evtype)
+```
+
+#### Fixing the exponents
+The exponents are coded as K for thousands, M for millions and so on. They were converted to numeric format, i.e. K = 3, M = 6, and so on, as per the resources found on the discussion forum. Other than K, M and B, the other exponents were revalued as `r 0`.
+
+This was done with the help of a function 'fixExp' and a big 'for' loop.
+```{r fixingExp, cache=TRUE}
+fixExp <- function(x){
+        isK <- grepl("K", x)
+        isM <- grepl("M", x)
+        isB <- grepl("B", x)
+        if(isK){
+                3
+        } else if(isM){
+                6
+        } else if(isB){
+                9
+        } else {0}
+}
+
+reqData2 <- data %>%
+                select(evtype, propdmg, propdmgexp, cropdmg, cropdmgexp)
+
+reqData2$propdmgexp <- as.character(reqData2$propdmgexp)
+reqData2$cropdmgexp <- as.character(reqData2$cropdmgexp)
+for(i in 1:length(reqData2$propdmgexp)){
+        reqData2$propdmgexp[i] <- fixExp(reqData2$propdmgexp[i])
+        reqData2$cropdmgexp[i] <- fixExp(reqData2$cropdmgexp[i])
+}
+
+reqData2$propdmgexp <- as.numeric(reqData2$propdmgexp)
+reqData2$cropdmgexp <- as.numeric(reqData2$cropdmgexp)
+```
+
+## Results
+### Across the United States, which types of events are most harmful with respect to population health?
+The injuries and fatalities were summed for each event type and the data set was ordered in their descending order. The dplyr package was used here.
+
+```{r q1}
+reqData <- data %>%
+                select(evtype, injuries, fatalities) %>%
+                mutate(total = injuries + fatalities) %>%
+                select(evtype, total) %>%
+                group_by(evtype) %>%
+                summarise(sum=sum(total))
+
+reqData <- reqData[order(reqData$sum, decreasing=TRUE), ]
+
+# barplot visualisation
+par(mar=c(12, 4, 2, 1))
+barplot(reqData$sum, names.arg=reqData$evtype, las=2, cex.names=0.7)
+
+print(head(reqData))
+```
+
+### Across the United States, which types of events have the greatest economic consequences?
+Similarly, the crop and property damange were summed for each event type and the data set was reordered.
+
+```{r q2}
+reqData2 <- reqData2 %>%
+                mutate(crop=cropdmg*10^cropdmgexp, prop=propdmg*10^propdmgexp, total=crop + prop) %>%
+                select(evtype, total) %>%
+                group_by(evtype) %>%
+                summarise(sum=sum(total))
+
+reqData2 <- reqData2[order(reqData2$sum, decreasing=TRUE), ]
+
+print(head(reqData2))
+```
