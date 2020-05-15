@@ -23,6 +23,8 @@ reqData <- reqData[order(reqData$sum, decreasing=TRUE), ]
 
 # barplot visualisation
 par(mar=c(12, 4, 2, 1))
-barplot(reqData$sum, names.arg=reqData$evtype, las=2, cex.names=0.7)
+barplot(reqData$sum, names.arg=reqData$evtype, las=2, cex.names=0.7,
+        ylab="Injuries and Fatalities",
+        main="Effect of Weather Events on Population Health")
 
 print(head(reqData))
